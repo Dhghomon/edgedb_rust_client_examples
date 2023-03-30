@@ -132,8 +132,13 @@ async fn main() -> Result<(), anyhow::Error> {
 
     println!("Json res is pretty easy: {json_res:?}\n");
 
+    // You can turn this into a serde Value and access using square brackets:
+    let as_value: serde_json::Value = serde_json::from_str(&json_res.to_string())?;
+    println!("Username is {},\nId is {}.\n", as_value["username"], as_value["id"]);
+
+    // But Deserialize is much more common (and rigorous).
     // Our Account struct implements Deserialize so we can use serde_json to deserialize the result into an Account:
-    let as_account: Account = serde_json::from_str(&json_res.to_string()).unwrap();
+    let as_account: Account = serde_json::from_str(&json_res.to_string())?;
     println!("Deserialized: {as_account:?}\n");
 
     // But EdgeDB's Rust client has a built-in Queryable macro that lets us just query without having
