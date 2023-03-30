@@ -12,5 +12,6 @@ First clone the repo, then:
 * [Make sure you have EdgeDB installed](https://www.edgedb.com/install)
 * Type `edgedb project init` and follow a few quick instructions. (Call the project `example` or whatever you like) You should have a running instance.
 * (Optional if curious: type `edgedb instance list` to see it and then type `edgedb` if you want to play around with the REPL a bit. (You can also type `edgedb ui` if you want to work through the UI) The schema hasn't been applied yet, so leave the REPL with `\quit` and:)
-* Type `edgedb migration create`. You should see a file called `00001.edgeql` show up in the `migrations` folder. Then type `edgedb migrate` to finish the migration.
+* Type `edgedb migration create`. You should see a file called `00001.edgeql` show up in the `migrations` folder. You don't need to do anything with this file - it's just a record of the instructions used to migrate the schema to its current state. (Very readable though so take a look if curious)
+* Type `edgedb migrate` to finish the migration.
 * Then just type `cargo run` and see the output.
