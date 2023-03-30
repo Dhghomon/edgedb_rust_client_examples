@@ -19,8 +19,9 @@ pub struct Account {
 }
 
 // Implements Queryable on top of Deserialize so is more convenient.
-// Note: Queryable requires fields to be in the same order as in the schema. 
-// So putting id before username will generate a DescriptorMismatch error when querying
+// Note: Queryable requires query fields to be in the same order as the struct.
+// So `select Account { id, username }` will generate a DescriptorMismatch::WrongField error
+// whereas `select Account { username, id }` will not
 #[derive(Debug, Deserialize, Queryable)]
 pub struct QueryableAccount {
     pub username: String,
@@ -29,7 +30,6 @@ pub struct QueryableAccount {
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
-
     // create_client() is the easiest way to create a client to access EdgeDB.
     // If there are any problems with setting up the client automatically,
     // it can be done step by step with a Builder. e.g.:
@@ -48,9 +48,7 @@ async fn main() -> Result<(), anyhow::Error> {
 
     // Selecting a tuple with two scalar types this time
     let query = "select {('Hi', 9.8)}";
-    let query_res: Value = client
-        .query_required_single(query, &())
-        .await?;
+    let query_res: Value = client.query_required_single(query, &()).await?;
     assert_eq!(
         query_res,
         Value::Tuple(vec![Value::Str("Hi".to_string()), Value::Float64(9.8)])
@@ -65,9 +63,7 @@ async fn main() -> Result<(), anyhow::Error> {
         }};",
         random_user_suffix()
     );
-    let query_res: Value = client
-        .query_required_single(&query, &())
-        .await?;
+    let query_res: Value = client.query_required_single(&query, &()).await?;
 
     // This time we queried for a Value, which is a big enum of all the types
     // that EdgeDB supports. Just printing it out includes both the shape info and the fields
@@ -101,10 +97,7 @@ async fn main() -> Result<(), anyhow::Error> {
       }};",
         random_user_suffix()
     );
-    if let Value::Object { shape: _, fields } = client
-        .query_required_single(&query, &())
-        .await?
-    {
+    if let Value::Object { shape: _, fields } = client.query_required_single(&query, &()).await? {
         // This time we have more than one field in the fields property
         for field in fields {
             println!("Got a field: {field:?}");
@@ -125,20 +118,20 @@ async fn main() -> Result<(), anyhow::Error> {
     );
 
     // We know there will only be one result so use query_single_json; otherwise it will return a map of json
-    let json_res = client
-        .query_single_json(&query, &())
-        .await?
-        .unwrap();
+    let json_res = client.query_single_json(&query, &()).await?.unwrap();
 
     println!("Json res is pretty easy: {json_res:?}\n");
 
     // You can turn this into a serde Value and access using square brackets:
-    let as_value: serde_json::Value = serde_json::from_str(&json_res.to_string())?;
-    println!("Username is {},\nId is {}.\n", as_value["username"], as_value["id"]);
+    let as_value: serde_json::Value = serde_json::from_str(&json_res)?;
+    println!(
+        "Username is {},\nId is {}.\n",
+        as_value["username"], as_value["id"]
+    );
 
     // But Deserialize is much more common (and rigorous).
     // Our Account struct implements Deserialize so we can use serde_json to deserialize the result into an Account:
-    let as_account: Account = serde_json::from_str(&json_res.to_string())?;
+    let as_account: Account = serde_json::from_str(&json_res)?;
     println!("Deserialized: {as_account:?}\n");
 
     // But EdgeDB's Rust client has a built-in Queryable macro that lets us just query without having
@@ -154,7 +147,27 @@ async fn main() -> Result<(), anyhow::Error> {
         random_user_suffix()
     );
     let as_queryable_account: QueryableAccount = client.query_required_single(&query, &()).await?;
-    println!("As QueryableAccount, no need for intermediate json: {as_queryable_account:?}");
+    println!("As QueryableAccount, no need for intermediate json: {as_queryable_account:?}\n");
+
+    // And changing the order of the fields from `username, id` to `id, username` will
+    // return a DescriptorMismatch::WrongField error
+    let query = format!(
+        "select (
+        insert Account {{
+        username := 'User{}'
+      }}) {{
+        id, 
+        username
+      }};",
+        random_user_suffix()
+    );
+    let cannot_make_into_queryable_account: Result<QueryableAccount, _> =
+        client.query_required_single(&query, &()).await;
+    assert_eq!(
+        format!("{cannot_make_into_queryable_account:?}"),
+        r#"Err(Error(Inner { code: 4278386176, messages: [], error: Some(WrongField { unexpected: "id", expected: "username" }), headers: {} }))"#
+    );
+    println!("{cannot_make_into_queryable_account:?}");
 
     Ok(())
 }
