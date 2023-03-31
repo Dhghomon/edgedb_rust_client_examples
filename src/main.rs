@@ -5,10 +5,11 @@ use uuid::Uuid;
 
 // The username field on Account has an exclusive constraint, plus
 // giving a different name each time looks better
-fn random_user_suffix() -> String {
-    std::iter::repeat_with(fastrand::alphanumeric)
+fn random_user_argument() -> (String,) {
+    let suffix = std::iter::repeat_with(fastrand::alphanumeric)
         .take(5)
-        .collect()
+        .collect::<String>();
+    (format!("User_{suffix}"),)
 }
 
 // Represents the Account type in the schema, only implements Deserialize
@@ -55,19 +56,24 @@ async fn main() -> Result<(), anyhow::Error> {
     );
     println!("String and num query res: {query_res:?}\n");
 
+    // You can pass in arguments too via a tuple
+    let query = "select {(<str>$0, <int32>$1)}";
+    let arguments = ("Hi there", 10);
+    let query_res: Value = client.query_required_single(query, &arguments).await?;
+    println!("Result of query with arguments: {query_res:?}\n");
+
     // Next insert a user account. Not SELECTing anything in particular
     // So it will return a Uuid (the object's id)
-    let query = format!(
-        "insert Account {{
-        username := 'User{}'
-        }};",
-        random_user_suffix()
-    );
-    let query_res: Value = client.query_required_single(&query, &()).await?;
+    let query = "insert Account {
+        username := <str>$0
+        };";
+    let query_res: Value = client
+        .query_required_single(&query, &random_user_argument())
+        .await?;
 
     // This time we queried for a Value, which is a big enum of all the types
     // that EdgeDB supports. Just printing it out includes both the shape info and the fields
-    println!("Value result, including the shape: {query_res:#?}");
+    println!("Value result, including the shape: {query_res:#?}\n");
 
     // We know it's a Value::Object. Let's match on the enum
     match query_res {
@@ -87,17 +93,17 @@ async fn main() -> Result<(), anyhow::Error> {
     };
 
     // Now do the same insert as before but we'll select a shape to return instead of just the id.
-    let query = format!(
-        "select (
-        insert Account {{
-        username := 'User{}'
-      }}) {{
+    let query = "select (
+        insert Account {
+        username := <str>$0
+      }) {
         username, 
         id
-      }};",
-        random_user_suffix()
-    );
-    if let Value::Object { shape: _, fields } = client.query_required_single(&query, &()).await? {
+      };";
+    if let Value::Object { shape: _, fields } = client
+        .query_required_single(&query, &random_user_argument())
+        .await?
+    {
         // This time we have more than one field in the fields property
         for field in fields {
             println!("Got a field: {field:?}");
@@ -106,19 +112,19 @@ async fn main() -> Result<(), anyhow::Error> {
     }
 
     // Now the same query as above, except we'll ask EdgeDB to cast it to json.
-    let query = format!(
-        "select <json>(
-        insert Account {{
-        username := 'User{}'
-      }}) {{
+    let query = "select <json>(
+        insert Account {
+        username := <str>$0
+      }) {
         username, 
         id
-      }};",
-        random_user_suffix()
-    );
+      };";
 
     // We know there will only be one result so use query_single_json; otherwise it will return a map of json
-    let json_res = client.query_single_json(&query, &()).await?.unwrap();
+    let json_res = client
+        .query_single_json(&query, &random_user_argument())
+        .await?
+        .unwrap();
 
     println!("Json res is pretty easy: {json_res:?}\n");
 
@@ -136,33 +142,30 @@ async fn main() -> Result<(), anyhow::Error> {
 
     // But EdgeDB's Rust client has a built-in Queryable macro that lets us just query without having
     // to cast to json. Same query as before:
-    let query = format!(
-        "select (
-        insert Account {{
-        username := 'User{}'
-      }}) {{
+    let query = "select (
+        insert Account {
+        username := <str>$0
+      }) {
         username, 
         id
-      }};",
-        random_user_suffix()
-    );
-    let as_queryable_account: QueryableAccount = client.query_required_single(&query, &()).await?;
+      };";
+    let as_queryable_account: QueryableAccount = client
+        .query_required_single(&query, &random_user_argument())
+        .await?;
     println!("As QueryableAccount, no need for intermediate json: {as_queryable_account:?}\n");
 
     // And changing the order of the fields from `username, id` to `id, username` will
     // return a DescriptorMismatch::WrongField error
-    let query = format!(
-        "select (
-        insert Account {{
-        username := 'User{}'
-      }}) {{
+    let query = "select (
+        insert Account {
+        username := <str>$0
+      }) {
         id, 
         username
-      }};",
-        random_user_suffix()
-    );
-    let cannot_make_into_queryable_account: Result<QueryableAccount, _> =
-        client.query_required_single(&query, &()).await;
+      };";
+    let cannot_make_into_queryable_account: Result<QueryableAccount, _> = client
+        .query_required_single(&query, &random_user_argument())
+        .await;
     assert_eq!(
         format!("{cannot_make_into_queryable_account:?}"),
         r#"Err(Error(Inner { code: 4278386176, messages: [], error: Some(WrongField { unexpected: "id", expected: "username" }), headers: {} }))"#
