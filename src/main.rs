@@ -81,7 +81,7 @@ async fn main() -> Result<(), anyhow::Error> {
         username := <str>$0
         };";
     let query_res: Value = client
-        .query_required_single(&query, &random_user_argument())
+        .query_required_single(query, &random_user_argument())
         .await?;
     // This time we queried for a Value, which is a big enum of all the types
     // that EdgeDB supports. Just printing it out includes both the shape info and the fields
@@ -113,7 +113,7 @@ async fn main() -> Result<(), anyhow::Error> {
         id
       };";
     if let Value::Object { shape: _, fields } = client
-        .query_required_single(&query, &random_user_argument())
+        .query_required_single(query, &random_user_argument())
         .await?
     {
         // This time we have more than one field in the fields property
@@ -134,7 +134,7 @@ async fn main() -> Result<(), anyhow::Error> {
 
     // We know there will only be one result so use query_single_json; otherwise it will return a map of json
     let json_res = client
-        .query_single_json(&query, &random_user_argument())
+        .query_single_json(query, &random_user_argument())
         .await?
         .unwrap();
     println!("Json res is pretty easy:");
@@ -162,7 +162,7 @@ async fn main() -> Result<(), anyhow::Error> {
         id
       };";
     let as_queryable_account: QueryableAccount = client
-        .query_required_single(&query, &random_user_argument())
+        .query_required_single(query, &random_user_argument())
         .await?;
     println!("As QueryableAccount, no need for intermediate json: {as_queryable_account:?}\n");
 
@@ -176,7 +176,7 @@ async fn main() -> Result<(), anyhow::Error> {
         username
       };";
     let cannot_make_into_queryable_account: Result<QueryableAccount, _> = client
-        .query_required_single(&query, &random_user_argument())
+        .query_required_single(query, &random_user_argument())
         .await;
     assert_eq!(
         format!("{cannot_make_into_queryable_account:?}"),
