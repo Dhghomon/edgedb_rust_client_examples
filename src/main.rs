@@ -75,6 +75,42 @@ async fn main() -> Result<(), anyhow::Error> {
         r#"Tuple([Str("Hi there"), Int32(10)])"#
     );
 
+    // Arguments in queries are used as type inference for the EdgeDB compiler,
+    // not to dynamically cast queries from the Rust side. So this will return an error:
+    let query = "select <int32>$0";
+    let argument = 9i16;
+    let query_res: Result<Value, _> = client.query_required_single(query, &(argument,)).await;
+    assert!(query_res.is_err());
+
+    // Note: most scalar types have an exact match with Rust (e.g. an int32 matches a Rust i32)
+    // while the internals of those that don't can be seen on the edgedb_protocol crate.
+    // e.g. a BigInt can be seen here https://docs.rs/edgedb-protocol/latest/edgedb_protocol/model/struct.BigInt.html
+    // and looks like this:
+    //
+    // pub struct BigInt {
+    //     pub(crate) negative: bool,
+    //     pub(crate) weight: i16,
+    //     pub(crate) digits: Vec<u16>,
+    // }
+    //
+    // and implements From for all the types you would expect.
+
+    // Thus this query will not work:
+    let query = "select <bigint>$0";
+    let argument = 20;
+    let query_res: Result<Value, _> = client.query_required_single(query, &(argument,)).await;
+    assert!(query_res.is_err());
+
+    // But this one will:
+    let query = "select <bigint>$0";
+    let bigint_arg = edgedb_protocol::model::BigInt::from(20i32);
+    let query_res: Value = client.query_required_single(query, &(bigint_arg,)).await?;
+    display_result(query, &query_res);
+    assert_eq!(
+        format!("{query_res:?}"),
+        "BigInt(BigInt { negative: false, weight: 0, digits: [20] })"
+    );
+
     // Next insert a user account. Not SELECTing anything in particular
     // So it will return a Uuid (the object's id)
     let query = "insert Account {
