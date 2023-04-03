@@ -12,6 +12,10 @@ fn random_user_argument() -> (String,) {
     (format!("User_{suffix}"),)
 }
 
+fn display_result(query: &str, res: &impl std::fmt::Debug) {
+    println!("Queried: {query}\nResult: {res:?}\n");
+}
+
 // Represents the Account type in the schema, only implements Deserialize
 #[derive(Debug, Deserialize)]
 pub struct Account {
@@ -45,22 +49,31 @@ async fn main() -> Result<(), anyhow::Error> {
     // first just select a string and return it
     let query = "select {'This is a query fetching a string'}";
     let query_res: String = client.query_required_single(query, &()).await?;
-    println!("Query result: `{query_res}`\n");
+    display_result(query, &query_res);
+    assert_eq!(query_res, "This is a query fetching a string");
 
     // Selecting a tuple with two scalar types this time
     let query = "select {('Hi', 9.8)}";
     let query_res: Value = client.query_required_single(query, &()).await?;
+    display_result(query, &query_res);
     assert_eq!(
         query_res,
         Value::Tuple(vec![Value::Str("Hi".to_string()), Value::Float64(9.8)])
     );
-    println!("String and num query res: {query_res:?}\n");
+    assert_eq!(
+        format!("{query_res:?}"),
+        r#"Tuple([Str("Hi"), Float64(9.8)])"#
+    );
 
     // You can pass in arguments too via a tuple
     let query = "select {(<str>$0, <int32>$1)}";
     let arguments = ("Hi there", 10);
     let query_res: Value = client.query_required_single(query, &arguments).await?;
-    println!("Result of query with arguments: {query_res:?}\n");
+    display_result(query, &query_res);
+    assert_eq!(
+        format!("{query_res:?}"),
+        r#"Tuple([Str("Hi there"), Int32(10)])"#
+    );
 
     // Next insert a user account. Not SELECTing anything in particular
     // So it will return a Uuid (the object's id)
@@ -70,10 +83,9 @@ async fn main() -> Result<(), anyhow::Error> {
     let query_res: Value = client
         .query_required_single(&query, &random_user_argument())
         .await?;
-
     // This time we queried for a Value, which is a big enum of all the types
     // that EdgeDB supports. Just printing it out includes both the shape info and the fields
-    println!("Value result, including the shape: {query_res:#?}\n");
+    display_result(query, &query_res);
 
     // We know it's a Value::Object. Let's match on the enum
     match query_res {
@@ -125,8 +137,8 @@ async fn main() -> Result<(), anyhow::Error> {
         .query_single_json(&query, &random_user_argument())
         .await?
         .unwrap();
-
-    println!("Json res is pretty easy: {json_res:?}\n");
+    println!("Json res is pretty easy:");
+    display_result(query, &json_res);
 
     // You can turn this into a serde Value and access using square brackets:
     let as_value: serde_json::Value = serde_json::from_str(&json_res)?;
@@ -170,7 +182,6 @@ async fn main() -> Result<(), anyhow::Error> {
         format!("{cannot_make_into_queryable_account:?}"),
         r#"Err(Error(Inner { code: 4278386176, messages: [], error: Some(WrongField { unexpected: "id", expected: "username" }), headers: {} }))"#
     );
-    println!("{cannot_make_into_queryable_account:?}");
 
     Ok(())
 }
