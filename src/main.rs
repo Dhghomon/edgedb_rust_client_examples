@@ -110,6 +110,8 @@ async fn main() -> Result<(), anyhow::Error> {
         format!("{query_res:?}"),
         "BigInt(BigInt { negative: false, weight: 0, digits: [20] })"
     );
+    // To view the rest of the implementations for scalar types, see here:
+    // https://github.com/edgedb/edgedb-rust/blob/master/edgedb-protocol/src/serialization/decode/queryable/scalars.rs#L45
 
     // Next insert a user account. Not SELECTing anything in particular
     // So it will return a Uuid (the object's id)
