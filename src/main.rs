@@ -36,8 +36,9 @@ pub struct QueryableAccount {
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
     // create_client() is the easiest way to create a client to access EdgeDB.
-    // If there are any problems with setting up the client automatically,
-    // it can be done step by step with a Builder. e.g.:
+    // If there are any problems with setting up the client automatically
+    // or if you need a more manual setup (e.g. reading from environment variables)
+    // it can be done step by step starting with a Builder. e.g.:
     // let mut builder = edgedb_tokio::Builder::uninitialized();
     // Read from environment variables:
     // builder.read_env_vars().unwrap();
