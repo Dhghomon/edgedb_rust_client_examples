@@ -39,7 +39,9 @@ async fn main() -> Result<(), anyhow::Error> {
     // If there are any problems with setting up the client automatically,
     // it can be done step by step with a Builder. e.g.:
     // let mut builder = edgedb_tokio::Builder::uninitialized();
+    // Read from environment variables:
     // builder.read_env_vars().unwrap();
+    // Or read from named instance:
     // builder.read_instance("name_of_your_instance_here").unwrap();
     // let config = builder.build().unwrap();
     // let client = edgedb_tokio::Client::new(&config);
