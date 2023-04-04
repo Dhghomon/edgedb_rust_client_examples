@@ -6,6 +6,7 @@ This repo contains a minimal EdgeDB setup with a schema based on [the tutorial](
 * Queries to return an Object and how to work with the Value enum
 * Query returning json to then deserialize into a Rust struct
 * Query using the Queryable derive macro, allowing deserializing into a Rust struct without needing intermediary json
+* Queries using arguments (e.g. $0, $1, etc.) requiring casts in EdgeDB and showing the relation between Rust and EdgeDB types
 
 First clone the repo, then:
 
