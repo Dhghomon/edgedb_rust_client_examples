@@ -1,15 +1,15 @@
+use std::collections::HashMap;
+
 use edgedb_derive::Queryable;
 use edgedb_protocol::value::Value;
 use serde::Deserialize;
 use uuid::Uuid;
 
-// The username field on Account has an exclusive constraint, plus
-// giving a different name each time looks better
-fn random_user_argument() -> (String,) {
-    let suffix = std::iter::repeat_with(fastrand::alphanumeric)
-        .take(5)
-        .collect::<String>();
-    (format!("User_{suffix}"),)
+// Used to add a random suffix to types with exclusive constraints.
+fn random_name() -> String {
+    std::iter::repeat_with(fastrand::alphanumeric)
+        .take(8)
+        .collect::<String>()
 }
 
 fn display_result(query: &str, res: &impl std::fmt::Debug) {
@@ -31,6 +31,23 @@ pub struct Account {
 pub struct QueryableAccount {
     pub username: String,
     pub id: Uuid,
+}
+
+// An edgedb(json) attribute on top of Queryable allows unpacking a struct from json returned from EdgeDB.
+#[derive(Debug, Deserialize, Queryable)]
+#[edgedb(json)]
+pub struct JsonQueryableAccount {
+    pub username: String,
+    pub id: Uuid,
+}
+
+// An edgedb(json) attribute on top of Queryable allows unpacking a struct from json returned from EdgeDB.
+#[derive(Debug, Deserialize, Queryable)]
+pub struct InnerJsonQueryableAccount {
+    pub username: String,
+    pub id: Uuid,
+    #[edgedb(json)]
+    pub some_json: HashMap<String, String>,
 }
 
 #[tokio::main]
@@ -122,7 +139,7 @@ async fn main() -> Result<(), anyhow::Error> {
         username := <str>$0
         };";
     let query_res: Value = client
-        .query_required_single(query, &random_user_argument())
+        .query_required_single(query, &(random_name(),))
         .await?;
     // This time we queried for a Value, which is a big enum of all the types
     // that EdgeDB supports. Just printing it out includes both the shape info and the fields
@@ -154,7 +171,7 @@ async fn main() -> Result<(), anyhow::Error> {
         id
       };";
     if let Value::Object { shape: _, fields } = client
-        .query_required_single(query, &random_user_argument())
+        .query_required_single(query, &(random_name(),))
         .await?
     {
         // This time we have more than one field in the fields property
@@ -175,7 +192,7 @@ async fn main() -> Result<(), anyhow::Error> {
 
     // We know there will only be one result so use query_single_json; otherwise it will return a map of json
     let json_res = client
-        .query_single_json(query, &random_user_argument())
+        .query_single_json(query, &(random_name(),))
         .await?
         .unwrap();
     println!("Json res is pretty easy:");
@@ -189,7 +206,8 @@ async fn main() -> Result<(), anyhow::Error> {
     );
 
     // But Deserialize is much more common (and rigorous).
-    // Our Account struct implements Deserialize so we can use serde_json to deserialize the result into an Account:
+    // Our Account struct implements Deserialize so we can use serde_json to deserialize the result into an Account.
+    // (Note: unpacking a struct from json via Queryable and edgedb(json) is shown further below)
     let as_account: Account = serde_json::from_str(&json_res)?;
     println!("Deserialized: {as_account:?}\n");
 
@@ -203,7 +221,7 @@ async fn main() -> Result<(), anyhow::Error> {
         id
       };";
     let as_queryable_account: QueryableAccount = client
-        .query_required_single(query, &random_user_argument())
+        .query_required_single(query, &(random_name(),))
         .await?;
     println!("As QueryableAccount, no need for intermediate json: {as_queryable_account:?}\n");
 
@@ -216,13 +234,34 @@ async fn main() -> Result<(), anyhow::Error> {
         id, 
         username
       };";
-    let cannot_make_into_queryable_account: Result<QueryableAccount, _> = client
-        .query_required_single(query, &random_user_argument())
-        .await;
+    let cannot_make_into_queryable_account: Result<QueryableAccount, _> =
+        client.query_required_single(query, &(random_name(),)).await;
     assert_eq!(
         format!("{cannot_make_into_queryable_account:?}"),
         r#"Err(Error(Inner { code: 4278386176, messages: [], error: Some(WrongField { unexpected: "id", expected: "username" }), headers: {} }))"#
     );
+
+    // An example of using Queryable and edgedb(json) to directly unpack a struct from json:
+    let json_queryable_accounts: Vec<JsonQueryableAccount> = client
+        .query("select <json>Account { username, id }", &())
+        .await
+        .unwrap();
+    println!("{json_queryable_accounts:#?}");
+
+    // And the same using edgedb(json) on a single field inside a struct that implements Queryable.
+    // In this case, this random json is turned into a HashMap<String, String>
+    let query = r#" with j := <json>(
+        nice_user := "yes",
+        bad_user := "no"
+    )
+    select Account {
+      username,
+      id,
+      some_json := j
+      };"#;
+
+    let query_res: Vec<InnerJsonQueryableAccount> = client.query(query, &()).await.unwrap();
+    println!("{query_res:#?}");
 
     Ok(())
 }

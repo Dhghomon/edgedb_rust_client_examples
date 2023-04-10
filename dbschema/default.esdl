@@ -6,6 +6,7 @@ module default {
       constraint exclusive;
     };
     multi link watchlist -> Content;
+    property some_json -> json;
   }
 
   type Person {
