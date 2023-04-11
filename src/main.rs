@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use edgedb_derive::Queryable;
 use edgedb_protocol::value::Value;
+use edgedb_tokio::Error;
 use serde::Deserialize;
 use uuid::Uuid;
 
@@ -73,6 +74,15 @@ async fn main() -> Result<(), anyhow::Error> {
     let query_res: String = client.query_required_single(query, &()).await?;
     display_result(query, &query_res);
     assert_eq!(query_res, "This is a query fetching a string");
+
+    // You can of course use the .query() method in this case - you'll just have
+    // a Vec<String> with a single item inside.
+    let query = "select {'This is a query fetching a string'}";
+    let query_res: Result<Vec<String>, Error> = client.query(query, &()).await;
+    assert_eq!(
+        format!("{query_res:?}"),
+        r#"Ok(["This is a query fetching a string"])"#
+    );
 
     // Selecting a tuple with two scalar types this time
     let query = "select {('Hi', 9.8)}";
