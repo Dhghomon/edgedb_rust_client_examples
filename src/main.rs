@@ -66,7 +66,9 @@ async fn main() -> Result<(), anyhow::Error> {
     let client = edgedb_tokio::create_client().await?;
 
     // Now that the client is set up,
-    // first just select a string and return it
+    // first just select a string and return it. .query_required_single
+    // can be used here as the cardinality is guaranteed to be one (EdgeDB
+    // will return a set with only one item).
     let query = "select {'This is a query fetching a string'}";
     let query_res: String = client.query_required_single(query, &()).await?;
     display_result(query, &query_res);
@@ -211,7 +213,16 @@ async fn main() -> Result<(), anyhow::Error> {
     let as_account: Account = serde_json::from_str(&json_res)?;
     println!("Deserialized: {as_account:?}\n");
 
-    // But EdgeDB's Rust client has a built-in Queryable macro that lets us just query without having
+    // The instance at this point is guaranteed to have more than one Account.
+    // Using query_required_single will now return an error:
+    let query = "select Account;";
+    let query_res: Result<Value, _> = client.query_required_single(query, &()).await;
+    println!("More than one result produces this error: {query_res:?}");
+    assert!(format!("{query_res:?}").contains(
+        "the query has cardinality MANY which does not match the expected cardinality ONE"
+    ));
+
+    // EdgeDB's Rust client has a built-in Queryable macro that lets us just query without having
     // to cast to json. Same query as before:
     let query = "select (
         insert Account {
