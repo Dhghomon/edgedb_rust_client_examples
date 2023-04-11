@@ -14,7 +14,7 @@ fn random_name() -> String {
 }
 
 fn display_result(query: &str, res: &impl std::fmt::Debug) {
-    println!("Queried: {query}\nResult: {res:?}\n");
+    println!("Queried: {query}\nResult:  {res:?}\n");
 }
 
 // Represents the Account type in the schema, only implements Deserialize
@@ -81,6 +81,7 @@ async fn main() -> Result<(), anyhow::Error> {
     // a Vec<String> with a single item inside.
     let query = "select {'This is a query fetching a string'}";
     let query_res: Result<Vec<String>, Error> = client.query(query, &()).await;
+    display_result(query, &query_res);
     assert_eq!(
         format!("{query_res:?}"),
         r#"Ok(["This is a query fetching a string"])"#
@@ -124,19 +125,20 @@ async fn main() -> Result<(), anyhow::Error> {
     );
 
 
-    // EdgeDB itself takes named arguments but the client expects positional arguments ($0, $1, $2, etc.):
+    // EdgeDB itself takes named arguments but the client expects positional arguments ($0, $1, $2, etc.)
+    // So this will not work:
     let query = "select {(<str>$arg1, <int32>$arg2)};";
     let arguments = ("Hi there", 10);
-    let query_res: Value = client.query_required_single(query, &arguments).await?;
-    assert!(format!("{query_res:?}").contains("Error: DescriptorMismatch: expected positional arguments, got arg1 instead of 0"));
+    let query_res: Result<Value, _> = client.query_required_single(query, &arguments).await;
+    assert!(format!("{query_res:?}").contains("expected positional arguments, got arg1 instead of 0"));
 
 
     // Arguments in queries are used as type inference for the EdgeDB compiler,
     // not to dynamically cast queries from the Rust side. So this will return an error:
     let query = "select <int32>$0";
-    let argument = 9i16;
+    let argument = 9i16; // Rust client will expect an int16
     let query_res: Result<Value, _> = client.query_required_single(query, &(argument,)).await;
-    assert!(query_res.is_err());
+    assert!(format!("{query_res:?}").contains("expected std::int16"));
 
 
     // Note: most scalar types have an exact match with Rust (e.g. an int32 matches a Rust i32)
@@ -256,7 +258,6 @@ async fn main() -> Result<(), anyhow::Error> {
     // Using query_required_single will now return an error:
     let query = "select Account;";
     let query_res: Result<Value, _> = client.query_required_single(query, &()).await;
-    println!("More than one result produces this error: {query_res:?}");
     assert!(format!("{query_res:?}").contains(
         "the query has cardinality MANY which does not match the expected cardinality ONE"
     ));
@@ -299,7 +300,7 @@ async fn main() -> Result<(), anyhow::Error> {
         .query("select <json>Account { username, id }", &())
         .await
         .unwrap();
-    println!("{json_queryable_accounts:#?}");
+    println!("{:?}\n", json_queryable_accounts.get(0));
 
 
     // And the same using edgedb(json) on a single field inside a struct that implements Queryable.
@@ -314,7 +315,7 @@ async fn main() -> Result<(), anyhow::Error> {
       some_json := j
       };"#;
     let query_res: Vec<InnerJsonQueryableAccount> = client.query(query, &()).await.unwrap();
-    println!("{query_res:#?}");
+    println!("{:?}", query_res.get(0));
 
     Ok(())
 }
