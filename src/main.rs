@@ -124,6 +124,13 @@ async fn main() -> Result<(), anyhow::Error> {
     );
 
 
+    // EdgeDB itself takes named arguments but the client expects positional arguments ($0, $1, $2, etc.):
+    let query = "select {(<str>$arg1, <int32>$arg2)};";
+    let arguments = ("Hi there", 10);
+    let query_res: Value = client.query_required_single(query, &arguments).await?;
+    assert!(format!("{query_res:?}").contains("Error: DescriptorMismatch: expected positional arguments, got arg1 instead of 0"));
+
+
     // Arguments in queries are used as type inference for the EdgeDB compiler,
     // not to dynamically cast queries from the Rust side. So this will return an error:
     let query = "select <int32>$0";
