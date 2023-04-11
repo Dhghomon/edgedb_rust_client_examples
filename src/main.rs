@@ -66,6 +66,7 @@ async fn main() -> Result<(), anyhow::Error> {
     // let client = edgedb_tokio::Client::new(&config);
     let client = edgedb_tokio::create_client().await?;
 
+
     // Now that the client is set up,
     // first just select a string and return it. .query_required_single
     // can be used here as the cardinality is guaranteed to be one (EdgeDB
@@ -75,6 +76,7 @@ async fn main() -> Result<(), anyhow::Error> {
     display_result(query, &query_res);
     assert_eq!(query_res, "This is a query fetching a string");
 
+
     // You can of course use the .query() method in this case - you'll just have
     // a Vec<String> with a single item inside.
     let query = "select {'This is a query fetching a string'}";
@@ -83,6 +85,7 @@ async fn main() -> Result<(), anyhow::Error> {
         format!("{query_res:?}"),
         r#"Ok(["This is a query fetching a string"])"#
     );
+
 
     // Selecting a tuple with two scalar types this time
     let query = "select {('Hi', 9.8)}";
@@ -97,8 +100,9 @@ async fn main() -> Result<(), anyhow::Error> {
         r#"Tuple([Str("Hi"), Float64(9.8)])"#
     );
 
+
     // You can pass in arguments too via a tuple
-    let query = "select {(<str>$0, <int32>$1)}";
+    let query = "select {(<str>$0, <int32>$1)};";
     let arguments = ("Hi there", 10);
     let query_res: Value = client.query_required_single(query, &arguments).await?;
     display_result(query, &query_res);
@@ -107,6 +111,19 @@ async fn main() -> Result<(), anyhow::Error> {
         r#"Tuple([Str("Hi there"), Int32(10)])"#
     );
 
+
+    // Technically you can pass in arguments through formatting a string in just the right way,
+    // but this quickly gets awkward - especially with needing an extra {{ curly brace
+    // in format strings. Compare this to the sample directly above:
+    let query = format!("select {{( '{}', <int32>{} )}};", "Hi there", 10);
+    let query_res: Value = client.query_required_single(&query, &()).await?;
+    display_result(&query, &query_res);
+    assert_eq!(
+        format!("{query_res:?}"),
+        r#"Tuple([Str("Hi there"), Int32(10)])"#
+    );
+
+
     // Arguments in queries are used as type inference for the EdgeDB compiler,
     // not to dynamically cast queries from the Rust side. So this will return an error:
     let query = "select <int32>$0";
@@ -114,25 +131,22 @@ async fn main() -> Result<(), anyhow::Error> {
     let query_res: Result<Value, _> = client.query_required_single(query, &(argument,)).await;
     assert!(query_res.is_err());
 
+
     // Note: most scalar types have an exact match with Rust (e.g. an int32 matches a Rust i32)
     // while the internals of those that don't can be seen on the edgedb_protocol crate.
     // e.g. a BigInt can be seen here https://docs.rs/edgedb-protocol/latest/edgedb_protocol/model/struct.BigInt.html
-    // and looks like this:
+    // and looks like this and implements From for all the types you would expect:
     //
     // pub struct BigInt {
     //     pub(crate) negative: bool,
     //     pub(crate) weight: i16,
     //     pub(crate) digits: Vec<u16>,
     // }
-    //
-    // and implements From for all the types you would expect.
-
     // Thus this query will not work:
     let query = "select <bigint>$0";
     let argument = 20;
     let query_res: Result<Value, _> = client.query_required_single(query, &(argument,)).await;
     assert!(query_res.is_err());
-
     // But this one will:
     let query = "select <bigint>$0";
     let bigint_arg = edgedb_protocol::model::BigInt::from(20i32);
@@ -145,6 +159,7 @@ async fn main() -> Result<(), anyhow::Error> {
     // To view the rest of the implementations for scalar types, see here:
     // https://github.com/edgedb/edgedb-rust/blob/master/edgedb-protocol/src/serialization/decode/queryable/scalars.rs#L45
 
+
     // Next insert a user account. Not SELECTing anything in particular
     // So it will return a Uuid (the object's id)
     let query = "insert Account {
@@ -156,6 +171,7 @@ async fn main() -> Result<(), anyhow::Error> {
     // This time we queried for a Value, which is a big enum of all the types
     // that EdgeDB supports. Just printing it out includes both the shape info and the fields
     display_result(query, &query_res);
+
 
     // We know it's a Value::Object. Let's match on the enum
     match query_res {
@@ -173,6 +189,7 @@ async fn main() -> Result<(), anyhow::Error> {
         }
         _other => println!("This shouldn't happen"),
     };
+
 
     // Now do the same insert as before but we'll select a shape to return instead of just the id.
     let query = "select (
@@ -193,6 +210,7 @@ async fn main() -> Result<(), anyhow::Error> {
         println!();
     }
 
+
     // Now the same query as above, except we'll ask EdgeDB to cast it to json.
     let query = "select <json>(
         insert Account {
@@ -202,6 +220,7 @@ async fn main() -> Result<(), anyhow::Error> {
         id
       };";
 
+
     // We know there will only be one result so use query_single_json; otherwise it will return a map of json
     let json_res = client
         .query_single_json(query, &(random_name(),))
@@ -210,6 +229,7 @@ async fn main() -> Result<(), anyhow::Error> {
     println!("Json res is pretty easy:");
     display_result(query, &json_res);
 
+
     // You can turn this into a serde Value and access using square brackets:
     let as_value: serde_json::Value = serde_json::from_str(&json_res)?;
     println!(
@@ -217,11 +237,13 @@ async fn main() -> Result<(), anyhow::Error> {
         as_value["username"], as_value["id"]
     );
 
+
     // But Deserialize is much more common (and rigorous).
     // Our Account struct implements Deserialize so we can use serde_json to deserialize the result into an Account.
     // (Note: unpacking a struct from json via Queryable and edgedb(json) is shown further below)
     let as_account: Account = serde_json::from_str(&json_res)?;
     println!("Deserialized: {as_account:?}\n");
+
 
     // The instance at this point is guaranteed to have more than one Account.
     // Using query_required_single will now return an error:
@@ -231,6 +253,7 @@ async fn main() -> Result<(), anyhow::Error> {
     assert!(format!("{query_res:?}").contains(
         "the query has cardinality MANY which does not match the expected cardinality ONE"
     ));
+
 
     // EdgeDB's Rust client has a built-in Queryable macro that lets us just query without having
     // to cast to json. Same query as before:
@@ -245,6 +268,7 @@ async fn main() -> Result<(), anyhow::Error> {
         .query_required_single(query, &(random_name(),))
         .await?;
     println!("As QueryableAccount, no need for intermediate json: {as_queryable_account:?}\n");
+
 
     // And changing the order of the fields from `username, id` to `id, username` will
     // return a DescriptorMismatch::WrongField error
@@ -262,12 +286,14 @@ async fn main() -> Result<(), anyhow::Error> {
         r#"Err(Error(Inner { code: 4278386176, messages: [], error: Some(WrongField { unexpected: "id", expected: "username" }), headers: {} }))"#
     );
 
+
     // An example of using Queryable and edgedb(json) to directly unpack a struct from json:
     let json_queryable_accounts: Vec<JsonQueryableAccount> = client
         .query("select <json>Account { username, id }", &())
         .await
         .unwrap();
     println!("{json_queryable_accounts:#?}");
+
 
     // And the same using edgedb(json) on a single field inside a struct that implements Queryable.
     // In this case, this random json is turned into a HashMap<String, String>
@@ -280,7 +306,6 @@ async fn main() -> Result<(), anyhow::Error> {
       id,
       some_json := j
       };"#;
-
     let query_res: Vec<InnerJsonQueryableAccount> = client.query(query, &()).await.unwrap();
     println!("{query_res:#?}");
 
