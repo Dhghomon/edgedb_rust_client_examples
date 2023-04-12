@@ -230,14 +230,17 @@ async fn main() -> Result<(), anyhow::Error> {
         id
       };";
 
-
-    // We know there will only be one result so use query_single_json; otherwise it will return a map of json
     let json_res = client
         .query_single_json(query, &(random_name(),))
         .await?
-        .unwrap();
+        .unwrap(); // .query_single_json returns a Result<Option<Json>>
     println!("Json res is pretty easy:");
     display_result(query, &json_res);
+
+    // We know there will only be one result so use query_single_json; otherwise it will return a map of json
+    // Note the fine difference between the two:
+    // "{"id": "1094b032-d8e7-11ed-acbd-abc1449ffb3b", "username": "rUQdaH9T"}" <-- query_single_json
+    // "[{"id": "1097e5cc-d8e7-11ed-acbd-db8520ede217", "username": "h64HSxH8"}]" <- query_json
 
 
     // You can turn this into a serde Value and access using square brackets:
