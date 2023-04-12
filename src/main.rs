@@ -155,18 +155,19 @@ async fn main() -> Result<(), anyhow::Error> {
     let query = "select <bigint>$0";
     let argument = 20;
     let query_res: Result<Value, _> = client.query_required_single(query, &(argument,)).await;
-    assert!(query_res.is_err());
+    assert!(format!("{query_res:?}").contains("expected std::int32"));
+
     // But this one will:
     let query = "select <bigint>$0";
-    let bigint_arg = edgedb_protocol::model::BigInt::from(20i32);
-    let query_res: Value = client.query_required_single(query, &(bigint_arg,)).await?;
+    let bigint_arg = edgedb_protocol::model::BigInt::from(20);
+    let query_res: Result<Value, _> = client.query_required_single(query, &(bigint_arg,)).await;
     display_result(query, &query_res);
     assert_eq!(
         format!("{query_res:?}"),
-        "BigInt(BigInt { negative: false, weight: 0, digits: [20] })"
+        "Ok(BigInt(BigInt { negative: false, weight: 0, digits: [20] }))"
     );
     // To view the rest of the implementations for scalar types, see here:
-    // https://github.com/edgedb/edgedb-rust/blob/master/edgedb-protocol/src/serialization/decode/queryable/scalars.rs#L45
+    // https://docs.rs/edgedb-protocol/latest/edgedb_protocol/model/index.html
 
 
     // Next insert a user account. Not SELECTing anything in particular
