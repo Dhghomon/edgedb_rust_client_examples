@@ -24,17 +24,18 @@ pub struct Account {
     pub id: Uuid,
 }
 
-// Implements Queryable on top of Deserialize so is more convenient.
+// Also implements Queryable so is more convenient.
 // Note: Queryable requires query fields to be in the same order as the struct.
 // So `select Account { id, username }` will generate a DescriptorMismatch::WrongField error
 // whereas `select Account { username, id }` will not
+// Also note: Queryable alone is enough, Deserialize not necessarily required
 #[derive(Debug, Deserialize, Queryable)]
 pub struct QueryableAccount {
     pub username: String,
     pub id: Uuid,
 }
 
-// An edgedb(json) attribute on top of Queryable allows unpacking a struct from json returned from EdgeDB.
+// An edgedb(json) attribute on top of Deserialize and Queryable allows unpacking a struct from json returned from EdgeDB.
 #[derive(Debug, Deserialize, Queryable)]
 #[edgedb(json)]
 pub struct JsonQueryableAccount {
@@ -49,6 +50,13 @@ pub struct InnerJsonQueryableAccount {
     pub id: Uuid,
     #[edgedb(json)]
     pub some_json: HashMap<String, String>,
+}
+
+#[derive(Debug, Deserialize, Queryable)]
+#[edgedb(json)]
+pub struct BankCustomer {
+    pub name: String,
+    pub bank_balance: i32,
 }
 
 #[tokio::main]
@@ -130,8 +138,9 @@ async fn main() -> Result<(), anyhow::Error> {
     let query = "select {(<str>$arg1, <int32>$arg2)};";
     let arguments = ("Hi there", 10);
     let query_res: Result<Value, _> = client.query_required_single(query, &arguments).await;
-    assert!(format!("{query_res:?}").contains("expected positional arguments, got arg1 instead of 0"));
-
+    assert!(
+        format!("{query_res:?}").contains("expected positional arguments, got arg1 instead of 0")
+    );
 
     // Arguments in queries are used as type inference for the EdgeDB compiler,
     // not to dynamically cast queries from the Rust side. So this will return an error:
@@ -320,6 +329,67 @@ async fn main() -> Result<(), anyhow::Error> {
       };"#;
     let query_res: Vec<InnerJsonQueryableAccount> = client.query(query, &()).await.unwrap();
     println!("{:?}", query_res.get(0));
+
+    // Transactions
+    // Customer1 has an account with 110 cents in it.
+    // Customer2 has an account with 90 cents in it.
+    // Customer1 is going to send 10 cents to Customer 2. This will be a transaction because
+    // we don't want the case to ever occur - even for a split second -  where one account 
+    // has sent money while the other has not received it yet. The operation must be atomic, 
+    // so we will use a transaction.
+
+    // After the transaction is over, each customer should have 100 cents.
+    
+    // Customers need unique names, so make them random:
+    let (customer_1_name, customer_2_name) = (
+        format!("Customer_{}", random_name()),
+        format!("Customer_{}", random_name()),
+    );
+
+    // First insert the customers in the database
+    let query_res = client
+        .query_json(
+            "select {
+            (insert BankCustomer {
+            name := <str>$0,
+            bank_balance := 110
+            }),
+            (insert BankCustomer {
+            name := <str>$1,
+            bank_balance := 90
+            })
+            } {
+            name,
+            bank_balance
+            };",
+            &(&customer_1_name, &customer_2_name),
+        )
+        .await
+        .unwrap();
+
+    println!("Customers before the transaction: {query_res:?}\n");
+
+    // Clone the client and get a reference to the names to avoid lifetime issues inside the closure
+    let cloned_client = client.clone();
+    let c1 = &customer_1_name;
+    let c2 = &customer_2_name;
+
+    cloned_client.transaction(|mut conn| async move {
+            conn.query_required_single::<Value, _>
+            ("update BankCustomer filter .name = <str>$0 set 
+            { bank_balance := .bank_balance - 10 };", &(c1,)).await.unwrap();
+            conn.query_required_single::<Value, _>
+            ("update BankCustomer filter .name = <str>$0 set
+            { bank_balance := .bank_balance + 10 };", &(&c2,)).await.unwrap();
+            Ok(())
+        }).await.unwrap();
+    
+    // Let's make sure the transaction went through
+    let customers = client.query_json("select BankCustomer {name, bank_balance} 
+        filter .name = <str>$0 or .name = <str>$1", 
+    &(customer_1_name, customer_2_name)).await.unwrap();
+
+    println!("And now the customers are: {customers:?}\n");
 
     Ok(())
 }
