@@ -311,8 +311,7 @@ async fn main() -> Result<(), anyhow::Error> {
     // An example of using Queryable and edgedb(json) to directly unpack a struct from json:
     let json_queryable_accounts: Vec<JsonQueryableAccount> = client
         .query("select <json>Account { username, id }", &())
-        .await
-        .unwrap();
+        .await?;
     println!("{:?}\n", json_queryable_accounts.get(0));
 
 
@@ -327,8 +326,8 @@ async fn main() -> Result<(), anyhow::Error> {
       id,
       some_json := j
       };"#;
-    let query_res: Vec<InnerJsonQueryableAccount> = client.query(query, &()).await.unwrap();
-    println!("{:?}", query_res.get(0));
+    let query_res: Vec<InnerJsonQueryableAccount> = client.query(query, &()).await?;
+    println!("{:?}\n", query_res.get(0));
 
     // Transactions
     // Customer1 has an account with 110 cents in it.
@@ -347,7 +346,7 @@ async fn main() -> Result<(), anyhow::Error> {
     );
 
     // First insert the customers in the database
-    let query_res = client
+    let customers_before = client
         .query_json(
             "select {
             (insert BankCustomer {
@@ -364,32 +363,26 @@ async fn main() -> Result<(), anyhow::Error> {
             };",
             &(&customer_1_name, &customer_2_name),
         )
-        .await
-        .unwrap();
+        .await?;
 
-    println!("Customers before the transaction: {query_res:?}\n");
+    println!("Customers before the transaction: {customers_before:#?}\n");
 
     // Clone the client and get a reference to the names to avoid lifetime issues inside the closure
     let cloned_client = client.clone();
     let c1 = &customer_1_name;
     let c2 = &customer_2_name;
 
-    cloned_client.transaction(|mut conn| async move {
-            conn.query_required_single::<Value, _>
-            ("update BankCustomer filter .name = <str>$0 set 
-            { bank_balance := .bank_balance - 10 };", &(c1,)).await.unwrap();
-            conn.query_required_single::<Value, _>
-            ("update BankCustomer filter .name = <str>$0 set
-            { bank_balance := .bank_balance + 10 };", &(&c2,)).await.unwrap();
-            Ok(())
-        }).await.unwrap();
-    
-    // Let's make sure the transaction went through
-    let customers = client.query_json("select BankCustomer {name, bank_balance} 
-        filter .name = <str>$0 or .name = <str>$1", 
-    &(customer_1_name, customer_2_name)).await.unwrap();
+    let customers_after = cloned_client.transaction(|mut conn| async move {
+            let res_1 = conn.query_required_single_json
+            ("select(update BankCustomer filter .name = <str>$0 set 
+            { bank_balance := .bank_balance - 10 }){name, bank_balance};", &(c1,)).await?;
+            let res_2 = conn.query_required_single_json
+            ("select(update BankCustomer filter .name = <str>$0 set
+            { bank_balance := .bank_balance + 10 }){name, bank_balance};", &(&c2,)).await?;
+            Ok(vec![res_1, res_2])
+        }).await?;
 
-    println!("And now the customers are: {customers:?}\n");
+    println!("And now the customers are: {customers_after:#?}\n");
 
     Ok(())
 }
