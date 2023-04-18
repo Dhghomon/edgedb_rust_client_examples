@@ -276,7 +276,7 @@ async fn main() -> Result<(), anyhow::Error> {
     ));
 
 
-    // EdgeDB's Rust client has a built-in Queryable macro that lets us just query without having
+    // The edgedb-derive crate has a built-in Queryable macro that lets us just query without having
     // to cast to json. Same query as before:
     let query = "select (
         insert Account {
