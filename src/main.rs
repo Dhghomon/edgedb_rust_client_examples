@@ -138,6 +138,7 @@ async fn main() -> Result<(), anyhow::Error> {
     let query = "select {(<str>$arg1, <int32>$arg2)};";
     let arguments = ("Hi there", 10);
     let query_res: Result<Value, _> = client.query_required_single(query, &arguments).await;
+    display_result(query, &query_res);
     assert!(
         format!("{query_res:?}").contains("expected positional arguments, got arg1 instead of 0")
     );
@@ -147,6 +148,7 @@ async fn main() -> Result<(), anyhow::Error> {
     let query = "select <int32>$0";
     let argument = 9i16; // Rust client will expect an int16
     let query_res: Result<Value, _> = client.query_required_single(query, &(argument,)).await;
+    display_result(query, &query_res);
     assert!(format!("{query_res:?}").contains("expected std::int16"));
 
 
@@ -164,6 +166,7 @@ async fn main() -> Result<(), anyhow::Error> {
     let query = "select <bigint>$0";
     let argument = 20;
     let query_res: Result<Value, _> = client.query_required_single(query, &(argument,)).await;
+    display_result(query, &query_res);
     assert!(format!("{query_res:?}").contains("expected std::int32"));
 
     // But this one will:
@@ -302,6 +305,7 @@ async fn main() -> Result<(), anyhow::Error> {
       };";
     let cannot_make_into_queryable_account: Result<QueryableAccount, _> =
         client.query_required_single(query, &(random_name(),)).await;
+    display_result(query, &cannot_make_into_queryable_account);
     assert_eq!(
         format!("{cannot_make_into_queryable_account:?}"),
         r#"Err(Error(Inner { code: 4278386176, messages: [], error: Some(WrongField { unexpected: "id", expected: "username" }), headers: {} }))"#
@@ -309,11 +313,11 @@ async fn main() -> Result<(), anyhow::Error> {
 
 
     // An example of using Queryable and edgedb(json) to directly unpack a struct from json:
+    let query = "select <json>Account { username, id }";
     let json_queryable_accounts: Vec<JsonQueryableAccount> = client
-        .query("select <json>Account { username, id }", &())
+        .query(query, &())
         .await?;
-    println!("{:?}\n", json_queryable_accounts.get(0));
-
+    display_result(query, &json_queryable_accounts.get(0));
 
     // And the same using edgedb(json) on a single field inside a struct that implements Queryable.
     // In this case, this random json is turned into a HashMap<String, String>
@@ -327,7 +331,7 @@ async fn main() -> Result<(), anyhow::Error> {
       some_json := j
       };"#;
     let query_res: Vec<InnerJsonQueryableAccount> = client.query(query, &()).await?;
-    println!("{:?}\n", query_res.get(0));
+    display_result(query, &query_res.get(0));
 
     // Transactions
     // Customer1 has an account with 110 cents in it.
