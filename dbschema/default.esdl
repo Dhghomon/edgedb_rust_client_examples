@@ -1,6 +1,5 @@
-# This is the same schema as in the tutorial: https://www.edgedb.com/tutorial
-
 module default {
+  # First part is the same schema as in the tutorial: https://www.edgedb.com/tutorial
   type Account {
     required property username -> str {
       constraint exclusive;
@@ -32,5 +31,30 @@ module default {
   type Season {
     required property number -> int32;
     required link show -> Show;
+  }
+
+  # The following types are exclusive to the repo
+  type BankCustomer {
+    required property name -> str {
+      constraint exclusive;
+    }
+    required property bank_balance -> int32; # bank balance in cents
+  }
+
+  type Citizen {
+    required property name -> str;
+    required property gov_id -> int32 {
+      constraint exclusive;
+    }
+    link spouse := (
+      with id := .gov_id,
+      cert := (select MarriageCertificate filter id in {.spouse_1.gov_id, .spouse_2.gov_id}),
+      select cert.spouse_2 if cert.spouse_1.gov_id = id else cert.spouse_1
+    )
+  }
+
+  type MarriageCertificate {
+    required link spouse_1 -> Citizen;
+    required link spouse_2 -> Citizen;
   }
 };
