@@ -121,9 +121,10 @@ async fn main() -> Result<(), anyhow::Error> {
     );
 
 
-    // Technically you can pass in arguments through formatting a string in just the right way,
-    // but this quickly gets awkward - especially with needing an extra {{ curly brace
-    // in format strings. Compare this to the sample directly above:
+    // You can pass in arguments through formatting a string in just the right way, but
+    // some care is required. Curly braces need to be doubled, and strings need to be enclosed
+    // inside '' without which the EdgeDB compiler will see a string like "Hi there" and see
+    // two separate tokens instead of a single string. Compare this to the sample directly above:
     let query = format!("select {{( '{}', <int32>{} )}};", "Hi there", 10);
     let query_res: Value = client.query_required_single(&query, &()).await?;
     display_result(&query, &query_res);
@@ -131,6 +132,23 @@ async fn main() -> Result<(), anyhow::Error> {
         format!("{query_res:?}"),
         r#"Tuple([Str("Hi there"), Int32(10)])"#
     );
+
+
+    // One more example of the same:
+    let movie_title = "Nice movie";
+    let release_year = 2023;
+    let query = format!("with movie_title := '{movie_title}',
+    year := {release_year},
+    select (insert Movie {{
+        title := movie_title,
+        release_year := year
+    }}) {{
+        title,
+        release_year,
+        id
+    }}");
+    let query_res: Value = client.query_required_single(&query, &()).await?;
+    println!("{query_res:#?}");
 
 
     // EdgeDB itself takes named arguments but the client expects positional arguments ($0, $1, $2, etc.)
@@ -196,7 +214,7 @@ async fn main() -> Result<(), anyhow::Error> {
 
 
     // We know it's a Value::Object. Let's match on the enum
-    match query_res {
+    match &query_res {
         // The fields property is a Vec<Option<Value>>. In this case we'll only have one:
         Value::Object { shape: _, fields } => {
             println!("Insert worked, Fields are: {fields:?}\n");
@@ -212,6 +230,13 @@ async fn main() -> Result<(), anyhow::Error> {
         _other => println!("This shouldn't happen"),
     };
 
+    // Or even shorter with if let:
+    if let Value::Object {shape: _, fields 
+    } = query_res {
+        if let Some(Some(Value::Uuid(id))) = fields.get(0) {
+            println!("Found an id: {id}\n");
+        }
+    }
 
     // Now do the same insert as before but we'll select a shape to return instead of just the id.
     let query = "select (
