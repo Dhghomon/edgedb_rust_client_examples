@@ -53,7 +53,6 @@ pub struct InnerJsonQueryableAccount {
 }
 
 #[derive(Debug, Deserialize, Queryable)]
-#[edgedb(json)]
 pub struct BankCustomer {
     pub name: String,
     pub bank_balance: i32,
@@ -331,10 +330,7 @@ async fn main() -> Result<(), anyhow::Error> {
     let cannot_make_into_queryable_account: Result<QueryableAccount, _> =
         client.query_required_single(query, &(random_name(),)).await;
     display_result(query, &cannot_make_into_queryable_account);
-    assert_eq!(
-        format!("{cannot_make_into_queryable_account:?}"),
-        r#"Err(Error(Inner { code: 4278386176, messages: [], error: Some(WrongField { unexpected: "id", expected: "username" }), headers: {} }))"#
-    );
+    assert!(format!("{cannot_make_into_queryable_account:?}").contains("WrongField { unexpected: \"id\", expected: \"username\" }"));
 
 
     // An example of using Queryable and edgedb(json) to directly unpack a struct from json:
@@ -375,8 +371,8 @@ async fn main() -> Result<(), anyhow::Error> {
     );
 
     // First insert the customers in the database
-    let customers_before = client
-        .query_json(
+    let customers_before: Vec<BankCustomer> = client
+        .query(
             "select {
             (insert BankCustomer {
             name := <str>$0,

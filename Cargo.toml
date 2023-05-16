@@ -5,9 +5,9 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.70"
-edgedb-derive = "0.4.0"
-edgedb-tokio = "0.3.0"
-edgedb-protocol = "0.4.0"
+edgedb-derive = "0.5.0"
+edgedb-tokio = "0.4.0"
+edgedb-protocol = "0.5.0"
 fastrand = "1.9.0"
 serde = { version = "1.0.159", features = ["derive"] }
 serde_json = "1.0.95"
