@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use edgedb_client_example::IsAStruct;
 use edgedb_derive::Queryable;
 use edgedb_protocol::value::Value;
 use edgedb_tokio::Error;
@@ -136,7 +137,8 @@ async fn main() -> Result<(), anyhow::Error> {
     // One more example of the same:
     let movie_title = "Nice movie";
     let release_year = 2023;
-    let query = format!("with movie_title := '{movie_title}',
+    let query = format!(
+        "with movie_title := '{movie_title}',
     year := {release_year},
     select (insert Movie {{
         title := movie_title,
@@ -145,7 +147,8 @@ async fn main() -> Result<(), anyhow::Error> {
         title,
         release_year,
         id
-    }}");
+    }}"
+    );
     let query_res: Value = client.query_required_single(&query, &()).await?;
     println!("{query_res:#?}");
 
@@ -230,8 +233,7 @@ async fn main() -> Result<(), anyhow::Error> {
     };
 
     // Or even shorter with if let:
-    if let Value::Object {shape: _, fields 
-    } = query_res {
+    if let Value::Object { shape: _, fields } = query_res {
         if let Some(Some(Value::Uuid(id))) = fields.get(0) {
             println!("Found an id: {id}\n");
         }
@@ -317,6 +319,19 @@ async fn main() -> Result<(), anyhow::Error> {
         .await?;
     println!("As QueryableAccount, no need for intermediate json: {as_queryable_account:?}\n");
 
+    // Click on the IsAStruct struct to see the code generated from the Queryable macro
+    let query = r#"with nice_struct := (insert IsAStruct {
+        name := 'Nice name',
+        number := 10,
+        is_cool := true
+        }),
+        select nice_struct {
+        name,
+        number,
+        is_cool
+        };"#;
+    let res: IsAStruct = client.query_required_single(query, &()).await?;
+    display_result(query, &res);
 
     // And changing the order of the fields from `username, id` to `id, username` will
     // return a DescriptorMismatch::WrongField error
@@ -330,14 +345,12 @@ async fn main() -> Result<(), anyhow::Error> {
     let cannot_make_into_queryable_account: Result<QueryableAccount, _> =
         client.query_required_single(query, &(random_name(),)).await;
     display_result(query, &cannot_make_into_queryable_account);
-    assert!(format!("{cannot_make_into_queryable_account:?}").contains("WrongField { unexpected: \"id\", expected: \"username\" }"));
-
+    assert!(format!("{cannot_make_into_queryable_account:?}")
+        .contains("WrongField { unexpected: \"id\", expected: \"username\" }"));
 
     // An example of using Queryable and edgedb(json) to directly unpack a struct from json:
     let query = "select <json>Account { username, id }";
-    let json_queryable_accounts: Vec<JsonQueryableAccount> = client
-        .query(query, &())
-        .await?;
+    let json_queryable_accounts: Vec<JsonQueryableAccount> = client.query(query, &()).await?;
     display_result(query, &json_queryable_accounts.get(0));
 
     // And the same using edgedb(json) on a single field inside a struct that implements Queryable.
@@ -358,12 +371,12 @@ async fn main() -> Result<(), anyhow::Error> {
     // Customer1 has an account with 110 cents in it.
     // Customer2 has an account with 90 cents in it.
     // Customer1 is going to send 10 cents to Customer 2. This will be a transaction because
-    // we don't want the case to ever occur - even for a split second -  where one account 
-    // has sent money while the other has not received it yet. The operation must be atomic, 
+    // we don't want the case to ever occur - even for a split second -  where one account
+    // has sent money while the other has not received it yet. The operation must be atomic,
     // so we will use a transaction.
 
     // After the transaction is over, each customer should have 100 cents.
-    
+
     // Customers need unique names, so make them random:
     let (customer_1_name, customer_2_name) = (
         format!("Customer_{}", random_name()),
@@ -397,15 +410,25 @@ async fn main() -> Result<(), anyhow::Error> {
     let c1 = &customer_1_name;
     let c2 = &customer_2_name;
 
-    let customers_after = cloned_client.transaction(|mut conn| async move {
-            let res_1 = conn.query_required_single_json
-            ("select(update BankCustomer filter .name = <str>$0 set 
-            { bank_balance := .bank_balance - 10 }){name, bank_balance};", &(c1,)).await?;
-            let res_2 = conn.query_required_single_json
-            ("select(update BankCustomer filter .name = <str>$0 set
-            { bank_balance := .bank_balance + 10 }){name, bank_balance};", &(&c2,)).await?;
+    let customers_after = cloned_client
+        .transaction(|mut conn| async move {
+            let res_1 = conn
+                .query_required_single_json(
+                    "select(update BankCustomer filter .name = <str>$0 set 
+            { bank_balance := .bank_balance - 10 }){name, bank_balance};",
+                    &(c1,),
+                )
+                .await?;
+            let res_2 = conn
+                .query_required_single_json(
+                    "select(update BankCustomer filter .name = <str>$0 set
+            { bank_balance := .bank_balance + 10 }){name, bank_balance};",
+                    &(&c2,),
+                )
+                .await?;
             Ok(vec![res_1, res_2])
-        }).await?;
+        })
+        .await?;
 
     println!("And now the customers are: {customers_after:#?}\n");
 

@@ -41,6 +41,12 @@ module default {
     required property bank_balance -> int32; # bank balance in cents
   }
 
+  type IsAStruct {
+    required property name -> str;
+    required property number -> int16;
+    required property is_cool -> bool;
+  }
+
   type Citizen {
     required property name -> str;
     required property gov_id -> int32 {
