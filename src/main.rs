@@ -409,23 +409,19 @@ async fn main() -> Result<(), anyhow::Error> {
     let cloned_client = client.clone();
     let c1 = &customer_1_name;
     let c2 = &customer_2_name;
+    let query = "with customer := (
+        update BankCustomer filter .name = <str>$0
+        set { bank_balance -= 10 }
+      ),
+      select customer {
+        name,
+        bank_balance
+      };";
 
     let customers_after = cloned_client
         .transaction(|mut conn| async move {
-            let res_1 = conn
-                .query_required_single_json(
-                    "select(update BankCustomer filter .name = <str>$0 set 
-            { bank_balance := .bank_balance - 10 }){name, bank_balance};",
-                    &(c1,),
-                )
-                .await?;
-            let res_2 = conn
-                .query_required_single_json(
-                    "select(update BankCustomer filter .name = <str>$0 set
-            { bank_balance := .bank_balance + 10 }){name, bank_balance};",
-                    &(&c2,),
-                )
-                .await?;
+            let res_1: BankCustomer = conn.query_required_single(query, &(c1,)).await?;
+            let res_2: BankCustomer = conn.query_required_single(query, &(&c2,)).await?;
             Ok(vec![res_1, res_2])
         })
         .await?;
@@ -434,3 +430,5 @@ async fn main() -> Result<(), anyhow::Error> {
 
     Ok(())
 }
+
+
