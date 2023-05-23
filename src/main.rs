@@ -61,6 +61,7 @@ pub struct BankCustomer {
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
+
     // create_client() is the easiest way to create a client to access EdgeDB.
     // If there are any problems with setting up the client automatically
     // or if you need a more manual setup (e.g. reading from environment variables)
@@ -202,7 +203,7 @@ async fn main() -> Result<(), anyhow::Error> {
     // https://docs.rs/edgedb-protocol/latest/edgedb_protocol/model/index.html
 
 
-    // Next insert a user account. Not SELECTing anything in particular
+    // Next insert a user account. Not 'select'ing anything in particular
     // So it will return a Uuid (the object's id)
     let query = "insert Account {
         username := <str>$0
@@ -367,7 +368,8 @@ async fn main() -> Result<(), anyhow::Error> {
     let query_res: Vec<InnerJsonQueryableAccount> = client.query(query, &()).await?;
     display_result(query, &query_res.get(0));
 
-    // Transactions
+    // ***** TRANSACTIONS *****
+
     // Customer1 has an account with 110 cents in it.
     // Customer2 has an account with 90 cents in it.
     // Customer1 is going to send 10 cents to Customer 2. This will be a transaction because
@@ -427,6 +429,31 @@ async fn main() -> Result<(), anyhow::Error> {
         .await?;
 
     println!("And now the customers are: {customers_after:#?}\n");
+
+    // ***** CONFIGURATION *****
+
+    // Client configuration can be changed with various "with_" methods
+    // such as with_config, with_globals, and with_default_module
+    // These create a shallow copy of the client which allows using
+    // multiple clients with different configurations.
+    
+    // Take this query for example:
+    let query = "select Account {username, id};";
+    
+    // The schema also has a module called 'test' in addition to 'default',
+    // and the test module also has its own type called Account type.
+    // Here we make a client from the original one that uses the test module 
+    // as its default instead of the module called 'default'.
+    let test_client = client.with_default_module(Some("test"));
+    
+    // No data has been inserted yet so no objects will be returned
+    let query_res: Result<Vec<QueryableAccount>, _> = test_client.query(query, &()).await;
+    assert_eq!(format!("{query_res:?}"), "Ok([])");
+    
+    // The original client is still around and will look inside the default
+    // module, so in this case the query will return a number of results.
+    let query_res: Vec<QueryableAccount> = client.query(query, &()).await?;
+    assert!(query_res.len() > 1);
 
     Ok(())
 }

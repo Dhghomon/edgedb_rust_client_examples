@@ -64,3 +64,11 @@ module default {
     required link spouse_2 -> Citizen;
   }
 };
+
+module test {
+  type Account {
+    required property username -> str {
+      constraint exclusive;
+    };
+  }
+}
