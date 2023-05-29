@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use edgedb_client_example::IsAStruct;
 use edgedb_derive::Queryable;
 use edgedb_protocol::value::Value;
-use edgedb_tokio::Error;
+use edgedb_tokio::{Error, TransactionOptions};
 use serde::Deserialize;
 use uuid::Uuid;
 
@@ -80,7 +80,7 @@ async fn main() -> Result<(), anyhow::Error> {
     // first just select a string and return it. .query_required_single
     // can be used here as the cardinality is guaranteed to be one (EdgeDB
     // will return a set with only one item).
-    let query = "select {'This is a query fetching a string'}";
+    let query = "select 'This is a query fetching a string'";
     let query_res: String = client.query_required_single(query, &()).await?;
     display_result(query, &query_res);
     assert_eq!(query_res, "This is a query fetching a string");
@@ -88,7 +88,7 @@ async fn main() -> Result<(), anyhow::Error> {
 
     // You can of course use the .query() method in this case - you'll just have
     // a Vec<String> with a single item inside.
-    let query = "select {'This is a query fetching a string'}";
+    let query = "select 'This is a query fetching a string'";
     let query_res: Result<Vec<String>, Error> = client.query(query, &()).await;
     display_result(query, &query_res);
     assert_eq!(
@@ -98,7 +98,7 @@ async fn main() -> Result<(), anyhow::Error> {
 
 
     // Selecting a tuple with two scalar types this time
-    let query = "select {('Hi', 9.8)}";
+    let query = "select ('Hi', 9.8);";
     let query_res: Value = client.query_required_single(query, &()).await?;
     display_result(query, &query_res);
     assert_eq!(
@@ -112,7 +112,7 @@ async fn main() -> Result<(), anyhow::Error> {
 
 
     // You can pass in arguments too via a tuple
-    let query = "select {(<str>$0, <int32>$1)};";
+    let query = "select (<str>$0, <int32>$1);";
     let arguments = ("Hi there", 10);
     let query_res: Value = client.query_required_single(query, &arguments).await?;
     display_result(query, &query_res);
@@ -260,8 +260,8 @@ async fn main() -> Result<(), anyhow::Error> {
     }
 
 
-    // Now the same query as above, except we'll ask EdgeDB to cast it to json.
-    let query = "select <json>(
+    // Now the same query as above, except we'll return it as json.
+    let query = "select (
         insert Account {
         username := <str>$0
       }) {
@@ -343,10 +343,10 @@ async fn main() -> Result<(), anyhow::Error> {
         id, 
         username
       };";
-    let cannot_make_into_queryable_account: Result<QueryableAccount, _> =
+    let wrong_order: Result<QueryableAccount, _> =
         client.query_required_single(query, &(random_name(),)).await;
-    display_result(query, &cannot_make_into_queryable_account);
-    assert!(format!("{cannot_make_into_queryable_account:?}")
+    display_result(query, &wrong_order);
+    assert!(format!("{wrong_order:?}")
         .contains("WrongField { unexpected: \"id\", expected: \"username\" }"));
 
     // An example of using Queryable and edgedb(json) to directly unpack a struct from json:
@@ -436,26 +436,34 @@ async fn main() -> Result<(), anyhow::Error> {
     // such as with_config, with_globals, and with_default_module
     // These create a shallow copy of the client which allows using
     // multiple clients with different configurations.
-    
+
     // Take this query for example:
     let query = "select Account {username, id};";
-    
+
     // The schema also has a module called 'test' in addition to 'default',
     // and the test module also has its own type called Account type.
-    // Here we make a client from the original one that uses the test module 
+    // Here we make a client from the original one that uses the test module
     // as its default instead of the module called 'default'.
     let test_client = client.with_default_module(Some("test"));
-    
+
     // No data has been inserted yet so no objects will be returned
     let query_res: Result<Vec<QueryableAccount>, _> = test_client.query(query, &()).await;
     assert_eq!(format!("{query_res:?}"), "Ok([])");
-    
+
     // The original client is still around and will look inside the default
     // module, so in this case the query will return a number of results.
     let query_res: Vec<QueryableAccount> = client.query(query, &()).await?;
     assert!(query_res.len() > 1);
 
+    // Many other clients with different can be created, all separate
+    // from the original client
+    let _read_only_transaction_client =
+        client.with_transaction_options(TransactionOptions::default().read_only(true));
+    // let _immediate_retry_once_client = client.with_retry_options(RetryOptions::default()
+    // .with_rule(RetryCondition::TransactionConflict,
+    //     1, |_| {
+    //         std::time::Duration::from_millis(0)
+    //     }));
+
     Ok(())
 }
-
-
