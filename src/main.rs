@@ -338,7 +338,7 @@ async fn main() -> Result<(), anyhow::Error> {
     display_result(query, &query_res.get(0));
 
     // The execute method doesn't return anything (a successful execute returns an Ok(()))
-    // which is convenient for things like or commands where we don't care about getting
+    // which is convenient for things like updates or commands where we don't care about getting
     // an output if it works
     client.execute("update Account set {username := .username ++ '!'};", &()).await?;
     // Or commands.
