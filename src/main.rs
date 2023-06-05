@@ -1,5 +1,6 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, ops::Neg};
 
+use anyhow::anyhow;
 use edgedb_client_example::IsAStruct;
 use edgedb_derive::Queryable;
 use edgedb_protocol::value::Value;
@@ -336,6 +337,18 @@ async fn main() -> Result<(), anyhow::Error> {
     let query_res: Vec<InnerJsonQueryableAccount> = client.query(query, &()).await?;
     display_result(query, &query_res.get(0));
 
+    // The execute method doesn't return anything (a successful execute returns an Ok(()))
+    // which is convenient for things like or commands where we don't care about getting
+    // an output if it works
+    client.execute("update Account set {username := .username ++ '!'};", &()).await?;
+    // Or commands.
+    client.execute("create superuser role project", &()).await.unwrap_or(println!("Already created"));
+    client.execute("alter role project set password := 'STRONGpassword';", &()).await?;
+
+    // Returns Ok(()) upon success but error info will be returned of course
+    let command = client.execute("create type MyType {};", &()).await;
+    assert!(command.unwrap_err().to_string().contains("bare DDL statements are not allowed"));
+
     // ***** TRANSACTIONS *****
 
     // Customer1 has an account with 110 cents in it.
@@ -377,25 +390,35 @@ async fn main() -> Result<(), anyhow::Error> {
 
     // Clone the client and get a reference to the names to avoid lifetime issues inside the closure
     let cloned_client = client.clone();
-    let c1 = &customer_1_name;
-    let c2 = &customer_2_name;
-    let query = "with customer := (
-        update BankCustomer filter .name = <str>$0
-        set { bank_balance := .bank_balance + <int32>$1 }
-      ),
-      select customer {
-        name,
-        bank_balance
-      };";
+    let sender = &customer_1_name;
+    let receiver = &customer_2_name;
 
-    let customers_after = cloned_client
+    let balance_check_query = "select BankCustomer { name, bank_balance } filter .name = <str>$0";
+    let transfer_query = "update BankCustomer filter .name = <str>$0
+            set { bank_balance := .bank_balance + <int32>$1 }";
+    let send_amount = 10;
+
+    cloned_client
         .transaction(|mut conn| async move {
-            let res_1: BankCustomer = conn.query_required_single(query, &(c1, -10)).await?;
-            let res_2: BankCustomer = conn.query_required_single(query, &(c2,  10)).await?;
-            Ok(vec![res_1, res_2])
+            let customer: BankCustomer = conn
+                .query_required_single(balance_check_query, &(sender,))
+                .await?;
+            if customer.bank_balance < send_amount {
+                println!("Not enough money to send, bailing from transaction");
+                return Ok(());
+            };
+            conn.execute(transfer_query, &(sender, send_amount.neg()))
+                .await?;
+            conn.execute(transfer_query, &(receiver, send_amount)).await?;
+
+            Ok(())
         })
         .await?;
 
+    let query = "select BankCustomer { name, bank_balance } filter .name in {<str>$0, <str>$1}";
+    let customers_after: Vec<BankCustomer> = client.query(query, &(sender, receiver)).await?;
+    assert!(customers_after[0].bank_balance == 100);
+    assert!(customers_after[1].bank_balance == 100);
     println!("And now the customers are: {customers_after:#?}\n");
 
     // ***** CONFIGURATION *****
