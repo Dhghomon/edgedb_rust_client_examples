@@ -122,38 +122,6 @@ async fn main() -> Result<(), anyhow::Error> {
     );
 
 
-    // You can pass in arguments through formatting a string in just the right way, but
-    // some care is required. Curly braces need to be doubled, and strings need to be enclosed
-    // inside '' without which the EdgeDB compiler will see a string like "Hi there" and see
-    // two separate tokens instead of a single string. Compare this to the sample directly above:
-    let query = format!("select {{( '{}', <int32>{} )}};", "Hi there", 10);
-    let query_res: Value = client.query_required_single(&query, &()).await?;
-    display_result(&query, &query_res);
-    assert_eq!(
-        format!("{query_res:?}"),
-        r#"Tuple([Str("Hi there"), Int32(10)])"#
-    );
-
-
-    // One more example of the same:
-    let movie_title = "Nice movie";
-    let release_year = 2023;
-    let query = format!(
-        "with movie_title := '{movie_title}',
-    year := {release_year},
-    select (insert Movie {{
-        title := movie_title,
-        release_year := year
-    }}) {{
-        title,
-        release_year,
-        id
-    }}"
-    );
-    let query_res: Value = client.query_required_single(&query, &()).await?;
-    println!("{query_res:#?}");
-
-
     // EdgeDB itself takes named arguments but the client expects positional arguments ($0, $1, $2, etc.)
     // So this will not work:
     let query = "select {(<str>$arg1, <int32>$arg2)};";
@@ -413,7 +381,7 @@ async fn main() -> Result<(), anyhow::Error> {
     let c2 = &customer_2_name;
     let query = "with customer := (
         update BankCustomer filter .name = <str>$0
-        set { bank_balance -= 10 }
+        set { bank_balance := .bank_balance + <int32>$1 }
       ),
       select customer {
         name,
@@ -422,8 +390,8 @@ async fn main() -> Result<(), anyhow::Error> {
 
     let customers_after = cloned_client
         .transaction(|mut conn| async move {
-            let res_1: BankCustomer = conn.query_required_single(query, &(c1,)).await?;
-            let res_2: BankCustomer = conn.query_required_single(query, &(&c2,)).await?;
+            let res_1: BankCustomer = conn.query_required_single(query, &(c1, -10)).await?;
+            let res_2: BankCustomer = conn.query_required_single(query, &(c2,  10)).await?;
             Ok(vec![res_1, res_2])
         })
         .await?;
