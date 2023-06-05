@@ -342,7 +342,7 @@ async fn main() -> Result<(), anyhow::Error> {
     // an output if it works
     client.execute("update Account set {username := .username ++ '!'};", &()).await?;
     // Or commands.
-    client.execute("create superuser role project", &()).await.unwrap_or(println!("Already created"));
+    client.execute("create superuser role project;", &()).await.unwrap_or(println!("Already created"));
     client.execute("alter role project set password := 'STRONGpassword';", &()).await?;
 
     // Returns Ok(()) upon success but error info will be returned of course
