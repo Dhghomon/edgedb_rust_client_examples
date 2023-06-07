@@ -1,10 +1,9 @@
-use std::{collections::HashMap, ops::Neg};
+use std::ops::Neg;
 
-use anyhow::anyhow;
 use edgedb_client_example::IsAStruct;
 use edgedb_derive::Queryable;
 use edgedb_protocol::value::Value;
-use edgedb_tokio::{Error, TransactionOptions};
+use edgedb_tokio::TransactionOptions;
 use serde::Deserialize;
 use uuid::Uuid;
 
@@ -30,8 +29,7 @@ pub struct Account {
 // Note: Queryable requires query fields to be in the same order as the struct.
 // So `select Account { id, username }` will generate a DescriptorMismatch::WrongField error
 // whereas `select Account { username, id }` will not
-// Also note: Queryable alone is enough, Deserialize not necessarily required
-#[derive(Debug, Deserialize, Queryable)]
+#[derive(Debug, Queryable)]
 pub struct QueryableAccount {
     pub username: String,
     pub id: Uuid,
@@ -43,15 +41,6 @@ pub struct QueryableAccount {
 pub struct JsonQueryableAccount {
     pub username: String,
     pub id: Uuid,
-}
-
-// An edgedb(json) attribute on top of Queryable allows unpacking a struct from json returned from EdgeDB.
-#[derive(Debug, Deserialize, Queryable)]
-pub struct InnerJsonQueryableAccount {
-    pub username: String,
-    pub id: Uuid,
-    #[edgedb(json)]
-    pub some_json: HashMap<String, String>,
 }
 
 #[derive(Debug, Deserialize, Queryable)]
@@ -82,65 +71,49 @@ async fn main() -> Result<(), anyhow::Error> {
     // can be used here as the cardinality is guaranteed to be one (EdgeDB
     // will return a set with only one item).
     let query = "select 'This is a query fetching a string'";
-    let query_res: String = client.query_required_single(query, &()).await?;
-    display_result(query, &query_res);
-    assert_eq!(query_res, "This is a query fetching a string");
-
+    let res: String = client.query_required_single(query, &()).await?;
+    display_result(query, &res);
+    assert_eq!(res, "This is a query fetching a string");
 
     // You can of course use the .query() method in this case - you'll just have
     // a Vec<String> with a single item inside.
     let query = "select 'This is a query fetching a string'";
-    let query_res: Result<Vec<String>, Error> = client.query(query, &()).await;
-    display_result(query, &query_res);
-    assert_eq!(
-        format!("{query_res:?}"),
-        r#"Ok(["This is a query fetching a string"])"#
-    );
-
+    let res: Vec<String> = client.query(query, &()).await?;
+    display_result(query, &res);
+    assert_eq!(res.get(0).unwrap(), "This is a query fetching a string");
 
     // Selecting a tuple with two scalar types this time
     let query = "select ('Hi', 9.8);";
-    let query_res: Value = client.query_required_single(query, &()).await?;
-    display_result(query, &query_res);
+    let res: Value = client.query_required_single(query, &()).await?;
+    display_result(query, &res);
     assert_eq!(
-        query_res,
-        Value::Tuple(vec![Value::Str("Hi".to_string()), Value::Float64(9.8)])
+        res,
+        Value::Tuple(vec![Value::Str("Hi".into()), Value::Float64(9.8)])
     );
-    assert_eq!(
-        format!("{query_res:?}"),
-        r#"Tuple([Str("Hi"), Float64(9.8)])"#
-    );
-
+    assert_eq!(format!("{res:?}"), r#"Tuple([Str("Hi"), Float64(9.8)])"#);
 
     // You can pass in arguments too via a tuple
     let query = "select (<str>$0, <int32>$1);";
     let arguments = ("Hi there", 10);
-    let query_res: Value = client.query_required_single(query, &arguments).await?;
-    display_result(query, &query_res);
-    assert_eq!(
-        format!("{query_res:?}"),
-        r#"Tuple([Str("Hi there"), Int32(10)])"#
-    );
-
+    let res: Value = client.query_required_single(query, &arguments).await?;
+    display_result(query, &res);
+    assert_eq!(format!("{res:?}"), r#"Tuple([Str("Hi there"), Int32(10)])"#);
 
     // EdgeDB itself takes named arguments but the client expects positional arguments ($0, $1, $2, etc.)
     // So this will not work:
     let query = "select {(<str>$arg1, <int32>$arg2)};";
     let arguments = ("Hi there", 10);
-    let query_res: Result<Value, _> = client.query_required_single(query, &arguments).await;
-    display_result(query, &query_res);
-    assert!(
-        format!("{query_res:?}").contains("expected positional arguments, got arg1 instead of 0")
-    );
+    let res: Result<Value, _> = client.query_required_single(query, &arguments).await;
+    display_result(query, &res);
+    assert!(format!("{res:?}").contains("expected positional arguments, got arg1 instead of 0"));
 
     // Arguments in queries are used as type inference for the EdgeDB compiler,
     // not to dynamically cast queries from the Rust side. So this will return an error:
     let query = "select <int32>$0";
     let argument = 9i16; // Rust client will expect an int16
-    let query_res: Result<Value, _> = client.query_required_single(query, &(argument,)).await;
-    display_result(query, &query_res);
-    assert!(format!("{query_res:?}").contains("expected std::int16"));
-
+    let res: Result<Value, _> = client.query_required_single(query, &(argument,)).await;
+    display_result(query, &res);
+    assert!(format!("{res:?}").contains("expected std::int16"));
 
     // Note: most scalar types have an exact match with Rust (e.g. an int32 matches a Rust i32)
     // while the internals of those that don't can be seen on the edgedb_protocol crate.
@@ -155,18 +128,18 @@ async fn main() -> Result<(), anyhow::Error> {
     // Thus this query will not work:
     let query = "select <bigint>$0";
     let argument = 20;
-    let query_res: Result<Value, _> = client.query_required_single(query, &(argument,)).await;
-    display_result(query, &query_res);
-    assert!(format!("{query_res:?}").contains("expected std::int32"));
+    let res: Result<Value, _> = client.query_required_single(query, &(argument,)).await;
+    display_result(query, &res);
+    assert!(format!("{res:?}").contains("expected std::int32"));
 
     // But this one will:
     let query = "select <bigint>$0";
     let bigint_arg = edgedb_protocol::model::BigInt::from(20);
-    let query_res: Result<Value, _> = client.query_required_single(query, &(bigint_arg,)).await;
-    display_result(query, &query_res);
+    let res: Value = client.query_required_single(query, &(bigint_arg,)).await?;
+    display_result(query, &res);
     assert_eq!(
-        format!("{query_res:?}"),
-        "Ok(BigInt(BigInt { negative: false, weight: 0, digits: [20] }))"
+        format!("{res:?}"),
+        "BigInt(BigInt { negative: false, weight: 0, digits: [20] })"
     );
     // To view the rest of the implementations for scalar types, see here:
     // https://docs.rs/edgedb-protocol/latest/edgedb_protocol/model/index.html
@@ -174,19 +147,15 @@ async fn main() -> Result<(), anyhow::Error> {
 
     // Next insert a user account. Not 'select'ing anything in particular
     // So it will return a Uuid (the object's id)
-    let query = "insert Account {
-        username := <str>$0
-        };";
-    let query_res: Value = client
-        .query_required_single(query, &(random_name(),))
-        .await?;
+    let name = random_name();
+    let query = "insert Account { username := <str>$0 };";
+    let res: Value = client.query_required_single(query, &(name,)).await?;
     // This time we queried for a Value, which is a big enum of all the types
     // that EdgeDB supports. Just printing it out includes both the shape info and the fields
-    display_result(query, &query_res);
-
+    display_result(query, &res);
 
     // We know it's a Value::Object. Let's match on the enum
-    match &query_res {
+    match &res {
         // The fields property is a Vec<Option<Value>>. In this case we'll only have one:
         Value::Object { shape: _, fields } => {
             println!("Insert worked, Fields are: {fields:?}\n");
@@ -203,23 +172,22 @@ async fn main() -> Result<(), anyhow::Error> {
     };
 
     // Or even shorter with if let:
-    if let Value::Object { shape: _, fields } = query_res {
+    if let Value::Object { shape: _, fields } = res {
         if let Some(Some(Value::Uuid(id))) = fields.get(0) {
             println!("Found an id: {id}\n");
         }
     }
 
     // Now do the same insert as before but we'll select a shape to return instead of just the id.
+    let name = random_name();
     let query = "select (
-        insert Account {
-        username := <str>$0
-      }) {
+        insert Account { username := <str>$0 }
+    ) {
         username, 
         id
       };";
-    if let Value::Object { shape: _, fields } = client
-        .query_required_single(query, &(random_name(),))
-        .await?
+    if let Value::Object { shape: _, fields } =
+        client.query_required_single(query, &(name,)).await?
     {
         // This time we have more than one field in the fields property
         for field in fields {
@@ -230,18 +198,16 @@ async fn main() -> Result<(), anyhow::Error> {
 
 
     // Now the same query as above, except we'll return it as json.
+    let name = random_name();
     let query = "select (
-        insert Account {
-        username := <str>$0
-      }) {
+        insert Account { username := <str>$0 }
+    ) {
         username, 
         id
-      };";
+    };";
 
-    let json_res = client
-        .query_single_json(query, &(random_name(),))
-        .await?
-        .unwrap(); // .query_single_json returns a Result<Option<Json>>
+    // .query_single_json returns a Result<Option<Json>>
+    let json_res = client.query_single_json(query, &(name,)).await?.unwrap();
     println!("Json res is pretty easy:");
     display_result(query, &json_res);
 
@@ -253,11 +219,7 @@ async fn main() -> Result<(), anyhow::Error> {
 
     // You can turn this into a serde Value and access using square brackets:
     let as_value: serde_json::Value = serde_json::from_str(&json_res)?;
-    println!(
-        "Username is {},\nId is {}.\n",
-        as_value["username"], as_value["id"]
-    );
-
+    println!("Name: {},\nId: {}.\n", as_value["username"], as_value["id"]);
 
     // But Deserialize is much more common (and rigorous).
     // Our Account struct implements Deserialize so we can use serde_json to deserialize the result into an Account.
@@ -269,24 +231,21 @@ async fn main() -> Result<(), anyhow::Error> {
     // The instance at this point is guaranteed to have more than one Account.
     // Using query_required_single will now return an error:
     let query = "select Account;";
-    let query_res: Result<Value, _> = client.query_required_single(query, &()).await;
-    assert!(format!("{query_res:?}").contains(
-        "the query has cardinality MANY which does not match the expected cardinality ONE"
-    ));
-
+    let res: Result<Value, _> = client.query_required_single(query, &()).await;
+    assert!(format!("{res:?}")
+        .contains("has cardinality MANY which does not match the expected cardinality ONE"));
 
     // The edgedb-derive crate has a built-in Queryable macro that lets us just query without having
     // to cast to json. Same query as before:
+    let name = random_name();
     let query = "select (
-        insert Account {
-        username := <str>$0
-      }) {
+        insert Account { username := <str>$0 }
+    ) {
         username, 
         id
       };";
-    let as_queryable_account: QueryableAccount = client
-        .query_required_single(query, &(random_name(),))
-        .await?;
+    let as_queryable_account: QueryableAccount =
+        client.query_required_single(query, &(name,)).await?;
     println!("As QueryableAccount, no need for intermediate json: {as_queryable_account:?}\n");
 
     // Click on the IsAStruct struct to see the code generated from the Queryable macro
@@ -305,15 +264,15 @@ async fn main() -> Result<(), anyhow::Error> {
 
     // And changing the order of the fields from `username, id` to `id, username` will
     // return a DescriptorMismatch::WrongField error
+    let name = random_name();
     let query = "select (
-        insert Account {
-        username := <str>$0
-      }) {
+        insert Account { username := <str>$0 }
+    ) {
         id, 
         username
       };";
     let wrong_order: Result<QueryableAccount, _> =
-        client.query_required_single(query, &(random_name(),)).await;
+        client.query_required_single(query, &(name,)).await;
     display_result(query, &wrong_order);
     assert!(format!("{wrong_order:?}")
         .contains("WrongField { unexpected: \"id\", expected: \"username\" }"));
@@ -323,31 +282,27 @@ async fn main() -> Result<(), anyhow::Error> {
     let json_queryable_accounts: Vec<JsonQueryableAccount> = client.query(query, &()).await?;
     display_result(query, &json_queryable_accounts.get(0));
 
-    // And the same using edgedb(json) on a single field inside a struct that implements Queryable.
-    // In this case, this random json is turned into a HashMap<String, String>
-    let query = r#" with j := <json>(
-        nice_user := "yes",
-        bad_user := "no"
-    )
-    select Account {
-      username,
-      id,
-      some_json := j
-      };"#;
-    let query_res: Vec<InnerJsonQueryableAccount> = client.query(query, &()).await?;
-    display_result(query, &query_res.get(0));
-
     // The execute method doesn't return anything (a successful execute returns an Ok(()))
     // which is convenient for things like updates or commands where we don't care about getting
     // an output if it works
-    client.execute("update Account set {username := .username ++ '!'};", &()).await?;
+    client
+        .execute("update Account set {username := .username ++ '!'};", &())
+        .await?;
     // Or commands.
-    client.execute("create superuser role project;", &()).await.unwrap_or(println!("Already created"));
-    client.execute("alter role project set password := 'STRONGpassword';", &()).await?;
+    client
+        .execute("create superuser role project;", &())
+        .await
+        .unwrap_or(println!("Already created"));
+    client
+        .execute("alter role project set password := 'STRONGpassword';", &())
+        .await?;
 
     // Returns Ok(()) upon success but error info will be returned of course
     let command = client.execute("create type MyType {};", &()).await;
-    assert!(command.unwrap_err().to_string().contains("bare DDL statements are not allowed"));
+    assert!(command
+        .unwrap_err()
+        .to_string()
+        .contains("bare DDL statements are not allowed"));
 
     // ***** TRANSACTIONS *****
 
@@ -393,24 +348,22 @@ async fn main() -> Result<(), anyhow::Error> {
     let sender = &customer_1_name;
     let receiver = &customer_2_name;
 
-    let balance_check_query = "select BankCustomer { name, bank_balance } filter .name = <str>$0";
-    let transfer_query = "update BankCustomer filter .name = <str>$0
+    let balance_query = "select BankCustomer { name, bank_balance } filter .name = <str>$0";
+    let send_query = "update BankCustomer filter .name = <str>$0
             set { bank_balance := .bank_balance + <int32>$1 }";
-    let send_amount = 10;
+    let amount = 10;
 
     cloned_client
         .transaction(|mut conn| async move {
             let customer: BankCustomer = conn
-                .query_required_single(balance_check_query, &(sender,))
+                .query_required_single(balance_query, &(sender,))
                 .await?;
-            if customer.bank_balance < send_amount {
+            if customer.bank_balance < amount {
                 println!("Not enough money to send, bailing from transaction");
                 return Ok(());
             };
-            conn.execute(transfer_query, &(sender, send_amount.neg()))
-                .await?;
-            conn.execute(transfer_query, &(receiver, send_amount)).await?;
-
+            conn.execute(send_query, &(sender, amount.neg())).await?;
+            conn.execute(send_query, &(receiver, amount)).await?;
             Ok(())
         })
         .await?;
@@ -438,13 +391,13 @@ async fn main() -> Result<(), anyhow::Error> {
     let test_client = client.with_default_module(Some("test"));
 
     // No data has been inserted yet so no objects will be returned
-    let query_res: Result<Vec<QueryableAccount>, _> = test_client.query(query, &()).await;
-    assert_eq!(format!("{query_res:?}"), "Ok([])");
+    let res: Result<Vec<QueryableAccount>, _> = test_client.query(query, &()).await;
+    assert_eq!(format!("{res:?}"), "Ok([])");
 
     // The original client is still around and will look inside the default
     // module, so in this case the query will return a number of results.
-    let query_res: Vec<QueryableAccount> = client.query(query, &()).await?;
-    assert!(query_res.len() > 1);
+    let res: Vec<QueryableAccount> = client.query(query, &()).await?;
+    assert!(res.len() > 1);
 
     // Many other clients with different can be created, all separate
     // from the original client
